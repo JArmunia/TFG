@@ -1,3 +1,5 @@
+# Script para realizar la segmentación y reducción de la dimensionalidad mediante FPCA de las imágenes DTI
+
 library(RNiftyReg)
 library(FPCA3D)
 library(imager)

@@ -1,3 +1,5 @@
+# Script para obtener los p-valores de los experimentos causales
+
 data_roi <- read.csv("causalidad_roi_nuevas.csv")
 p_value <- 1 -pnorm(abs(data_roi[["X_Y"]]-data_roi[["Y_X"]]), sd = sqrt(abs(data_roi[["sigma2"]])))  
 final_df_roi <- cbind(data_roi, p_value)

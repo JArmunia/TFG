@@ -27,6 +27,14 @@ ROI_VS_GEN = 1
 
 
 def make_generator_model(latent_size, condition_size, output_size):
+    """
+    Función que devuelve un generador con el tamaño de entrada y salida indicados
+
+    :param latent_size: Tamaño del vector de ruido aleatorio
+    :param condition_size: Tamaño de la condición
+    :param output_size: Tamaño de la variable a generar
+    :return: Generador G(Condition, Z) --> Output
+    """
     model = tf.keras.Sequential()
     model.add(layers.Dense(128, input_shape=(latent_size + condition_size,)))
     model.add(layers.BatchNormalization())
@@ -42,10 +50,23 @@ def make_generator_model(latent_size, condition_size, output_size):
 
 
 def generator_loss(fake_output):
+    """
+    Función para calcular el loss del generador
+
+    :param fake_output: Output del discriminador para los ejemplos generados
+    :return: Loss del generador
+    """
     return cross_entropy(tf.ones_like(fake_output), fake_output)
 
 
 def make_discriminator_model(input_size, condition_size):
+    """
+    Función que devuelve un discriminador con el tamaño de entrada indicados
+
+    :param input_size: Tamaño de la valiable real o generada
+    :param condition_size: Tamaño de la condición
+    :return: Devuelve la predicción del discriminador, D(EjemploReal, Condición) o D(G(Condition, Z), Condición)
+    """
     model = tf.keras.Sequential()
 
     model.add(layers.Dense(128, input_shape=(input_size + condition_size,)))
@@ -62,6 +83,13 @@ def make_discriminator_model(input_size, condition_size):
 
 
 def discriminator_loss(real_output, fake_output):
+    """
+    Función para calcular el loss del discriminador
+
+    :param real_output: Output del discriminador para los ejemplos reales
+    :param fake_output: Output del discriminador para los ejemplos generados
+    :return: Loss del discriminador
+    """
     real_loss = cross_entropy(tf.ones_like(real_output), real_output)
     fake_loss = cross_entropy(tf.zeros_like(fake_output), fake_output)
     total_loss = real_loss + fake_loss
@@ -69,18 +97,27 @@ def discriminator_loss(real_output, fake_output):
 
 
 @tf.function
-def train_step(generator, discriminator, images, labels, noise_dim, epoch):
-    # print("Images shape: ", images.shape, "Labels shape: ", labels.shape)
+def train_step(generator, discriminator, examples, labels, noise_dim, epoch):
+    """
+    Ciclo de entrenamiento de la GAN
+
+    :param generator: Modelo generador
+    :param discriminator: Modelo discriminador
+    :param examples: Ejemplos reales
+    :param labels: Etiquetas de los ejemplos reales
+    :param noise_dim: Tamaño del vector de ruido aleatorio
+    :param epoch: Número de el epoch actual
+    :return: Loss del generador y discriminador
+    """
     noise = tf.random.normal([labels.shape[0], noise_dim])
     with tf.GradientTape() as gen_tape, tf.GradientTape() as disc_tape:
-        # labels = tf.reshape(labels, (BATCH_SIZE,1))
+        # Entrenamos el discriminador solo en los ciclos pares
         if epoch % 2 == 0:
             disc_train = False
         else:
             disc_train = True
-        # disc_train = True
 
-        generated_images = generator(
+        generated_examples = generator(
             tf.concat([
                 noise,
                 labels],
@@ -89,14 +126,14 @@ def train_step(generator, discriminator, images, labels, noise_dim, epoch):
 
         real_output = discriminator(
             tf.concat([
-                images,
+                examples,
                 labels],
                 axis=1),
             training=disc_train)
 
         fake_output = discriminator(
             tf.concat([
-                generated_images,
+                generated_examples,
                 labels],
                 axis=1),
             training=disc_train)
@@ -114,6 +151,16 @@ def train_step(generator, discriminator, images, labels, noise_dim, epoch):
 
 
 def train(generator, discriminator, dataset, epochs, noise_dim):
+    """
+    Entrenamiento de la GAN
+
+    :param generator: Modelo generador
+    :param discriminator: Modelo discriminador
+    :param dataset: Dataset de ejemplos reales
+    :param epochs: Número de epoch
+    :param noise_dim: Tamaño del vector de ruido aleatorio
+    :return: Lista con el loss del generador y discriminador por cada epoch
+    """
     history = []
     start = time.time()
     for epoch in range(epochs):
@@ -121,27 +168,32 @@ def train(generator, discriminator, dataset, epochs, noise_dim):
         gen_loss, disc_loss = 0, 0
         count = 0
         # TODO: pasar imagenes bien
-        for image_batch, labels in dataset:
-            g, d = train_step(generator, discriminator, image_batch, labels, noise_dim, epoch)
+        for examples_batch, labels in dataset:
+            g, d = train_step(generator, discriminator, examples_batch, labels, noise_dim, epoch)
             gen_loss += g
             disc_loss += d
             count += 1
 
         if epoch % 10 == 0:
-            # print('Disc loss: {}, Gen loss: {}. Time for epoch {} is {} sec'.format(disc_loss / count, gen_loss / count,
-            #                                                                        epoch, time.time() - start))
-            history.append((disc_loss / count, gen_loss / count, epoch))
-            start = time.time()
 
-    # print('Disc loss: {}, Gen loss: {}. Time for epoch {} is {} sec'.format(disc_loss / count, gen_loss / count, epoch,
-    #                                                                        time.time() - start))
+            history.append((disc_loss / count, gen_loss / count, epoch))
+
     history.append((disc_loss / count, gen_loss / count, epoch))
 
     return history
 
 
-def generate_examples(generator, num_imgs, noise_dim, condition):
-    noise = tf.random.normal([num_imgs, noise_dim], dtype="float32")
+def generate_examples(generator, num_examples, noise_dim, condition):
+    """
+    Generar ejemplos mediante un generador
+
+    :param generator: Modelo generador
+    :param num_examples: Número de imágenes a generar
+    :param noise_dim: Tamaño del vector de ruido aleatorio
+    :param condition: Condición de los ejemplos a generar
+    :return: Ejemplos generados
+    """
+    noise = tf.random.normal([num_examples, noise_dim], dtype="float32")
     labels = tf.convert_to_tensor(condition, dtype="float32")
     inp = tf.concat([noise, labels], axis=1)
     generated_image = generator(inp, training=False)
@@ -149,6 +201,14 @@ def generate_examples(generator, num_imgs, noise_dim, condition):
 
 
 def correct_preds(true_labels, preds):
+    """
+    Función que evalúa las predicciones, devolviendo un vector de float en el que 1 representa una predicción
+    correcta y 0 una incorrecta
+
+    :param true_labels: Etiquetas reales
+    :param preds: Predicciones
+    :return: Vector de predicciones
+    """
     correct_labels = []
     for i, true_label in enumerate(true_labels):
         correct_labels.append(int(preds[i]) == int(true_label))
@@ -156,6 +216,13 @@ def correct_preds(true_labels, preds):
 
 
 def correct_probs(true_labels, probs):
+    """
+    Devuelve las probabilidades que el modelo ha dado a la clase correcta
+
+    :param true_labels: Etiquetas reales
+    :param probs: Probabilidad de cada clase a cada ejemplo
+    :return: Probabilidades de la clase correcta de cada ejemplo
+    """
     correct_probs = []
     for i, true_label in enumerate(true_labels):
         correct_probs.append(probs[i, int(true_labels[i])])
@@ -163,6 +230,19 @@ def correct_probs(true_labels, probs):
 
 
 def C2ST(condition, real, generator, noise_dim, train_test_prop, test_type):
+    """
+    Realiza un C2ST dado un generador e imágenes reales, evalúa el generador intentando distinguir entre los ejemplos
+    generados y los reales.
+
+    :param condition: Condición de los ejemplos (Etiquetas)
+    :param real: Ejemplos reales
+    :param generator: Modelo generador
+    :param noise_dim: Tamaño del vector de ruido aleatorio
+    :param train_test_prop: Proporción entre el conjunto de entrenamiento y test
+    :param test_type: Tipo de test, si el test utiliza las condiciones o no
+    :return: Puntuación recibida por el generador
+    """
+
     n_images = real.shape[0]
 
     fake = generate_examples(generator, n_images, noise_dim, condition)
@@ -198,11 +278,21 @@ def C2ST(condition, real, generator, noise_dim, train_test_prop, test_type):
            correct_probs(labels_test, KNN_classifier.predict_proba(dataset_test))
 
 
-def train_gan(condition, generated, noise_dim, n_epoch, batch_size):
-    dataset = tf.data.Dataset.from_tensor_slices((generated.astype("float32"), condition.astype("float32"))).shuffle(
+def train_gan(condition, examples, noise_dim, n_epoch, batch_size):
+    """
+    Entrenamiento de la GAN
+
+    :param condition: Condición para la generación
+    :param examples: Ejemplos reales
+    :param noise_dim: Tamaño del vector de ruido
+    :param n_epoch: Número de epoch
+    :param batch_size: Tamaño del batch
+    :return: Generador entrenado e historia de la GAN
+    """
+    dataset = tf.data.Dataset.from_tensor_slices((examples.astype("float32"), condition.astype("float32"))).shuffle(
         condition.shape[0]).batch(batch_size)
-    generator = make_generator_model(YtoX_noise_dim, condition.shape[1], generated.shape[1])
-    discriminator = make_discriminator_model(generated.shape[1], condition.shape[1])
+    generator = make_generator_model(YtoX_noise_dim, condition.shape[1], examples.shape[1])
+    discriminator = make_discriminator_model(examples.shape[1], condition.shape[1])
 
     history = train(generator, discriminator, dataset, n_epoch, noise_dim)
 
@@ -210,11 +300,23 @@ def train_gan(condition, generated, noise_dim, n_epoch, batch_size):
 
 
 def normalize(dataset):
+    """
+    Normalizar dataset
+
+    :param dataset: Dataset a normalizar
+    :return: Dataset Normalizado
+    """
     dataset = (dataset - dataset.mean(axis=0)) / dataset.std(axis=0)
     return dataset
 
 
 def load_gene(gene_path):
+    """
+    Cargar Gen
+
+    :param gene_path: Dirección de los datos del gen
+    :return: Dataset con los datos genéticos reducidos con PCA y tamaño de los genes reducidos
+    """
     df_gen = pd.read_csv(gene_path, sep=" ").drop(["FID", "PHENOTYPE"], axis=1).fillna(-1)
     gene_values = df_gen.values[:, 1:]
     subjects = df_gen.values[:, 0].reshape(-1, 1)
@@ -228,6 +330,12 @@ def load_gene(gene_path):
 
 
 def load_ROI(roi_path):
+    """
+    Cargar región de interés
+
+    :param roi_path: Dirección de los datos de la ROI
+    :return: Dataset de la ROI reducida mediante FPCA
+    """
     AD_CN, groups = util.obtain_data_files(ALL_DATA, info_data)
 
     imgs = []
@@ -250,6 +358,12 @@ def load_ROI(roi_path):
 
 
 def ROI_vs_gene_dataset(roi_path, gene_path):
+    """
+    Creación del dataset para el experimento ROI vs Genes
+    :param roi_path: Dirección del ROI
+    :param gene_path: Dirección del Gen
+    :return: dataset de roi y dataset de genes
+    """
     # Obtenemos los diccionarios con los nombres de los ficheros que contienen las imágenes
     data, images_size = load_ROI(roi_path)
 
@@ -268,7 +382,13 @@ def ROI_vs_gene_dataset(roi_path, gene_path):
     return roi_data, gene_data
 
 
-def ROI_vs_AD(roi_path):
+def ROI_vs_AD_dataset(roi_path):
+    """
+    Creación del dataset de ROI vs AD
+
+    :param roi_path: Dirección del ROI
+    :return: dataset de roi
+    """
     # Obtenemos los diccionarios con los nombres de los ficheros que contienen las imágenes
     data, images_size = load_ROI(roi_path)
 
@@ -281,6 +401,14 @@ def ROI_vs_AD(roi_path):
 
 
 def causal_experiment(X, Y, test_type):
+    """
+    Experimento causal
+
+    :param X: Variable X
+    :param Y: Variable Y
+    :param test_type: Tipo de test, si es ROI_VS_AD se utilizan las condiciones en el test
+    :return: Puntuaciones del test y sigma para calcular el p-valor
+    """
     XtoY_generator, XtoY_history = train_gan(X, Y, XtoY_noise_dim, N_EPOCH, BATCH_SIZE)
 
     YtoX_generator, YtoX_history = train_gan(Y, X, YtoX_noise_dim, N_EPOCH, BATCH_SIZE)
@@ -316,6 +444,7 @@ ROIs = [("Caudate", "FPCAs/FPCAS_Caudate.csv"),
         ("Ventricle", "FPCAs/FPCAS_Ventricle.csv"),
         ("Temporal_Left", "FPCAs/FPCAS_Left_Temporal_Lobe.csv"),
         ("Temporal_Right", "FPCAs/FPCAS_Right_Temporal_Lobe.csv")]
+
 GENES_DIRECTORY = "GenesRAW"
 GENES = ([(f[:len(f) - 4], os.path.join(GENES_DIRECTORY, f)) for f in os.listdir(GENES_DIRECTORY)])
 # X, Y = ROI_vs_gene_dataset("FPCAS_Ventricle.csv", "GenesRAW/FOLR2.raw")
@@ -323,6 +452,7 @@ start = time.time()
 roi_output_file = "causalidad_roi_nuevas.csv"
 gene_output_file = "causalidad_genes_probs.csv"
 
+# Test de ROI vs AD
 with open(roi_output_file, "w") as f:
     f.write("ROI,X_Y,Y_X,sigma2\n")
 
@@ -331,27 +461,28 @@ for roi in ROIs:
     roi_name = roi[0]
     roi_path = roi[1]
     print("empieza", roi_name)
-    X, Y = ROI_vs_AD(roi_path)
+    X, Y = ROI_vs_AD_dataset(roi_path)
     acc_x_y, acc_y_x, T, sigma2 = causal_experiment(X, Y, ROI_VS_AD)
     print("X_Y:", acc_x_y, "Y_X:", acc_y_x)
     print("Tiempo total : ", time.time() - start)
     with open(roi_output_file, "a") as f:
         f.write(f"{roi_name},{acc_x_y},{acc_y_x},{sigma2}\n")
 
-# with open(gene_output_file, "w") as f:
-#     f.write("ROI,GEN,X_Y,Y_X,sigma2\n")
-#
-# for roi in ROIs:
-#     roi_name = roi[0]
-#     roi_path = roi[1]
-#     for gene in GENES:
-#         start = time.time()
-#         gene_name = gene[0]
-#         gene_path = gene[1]
-#         print("empieza", roi_name, gene_name)
-#         X, Y = ROI_vs_gene_dataset(roi_path, gene_path)
-#         acc_x_y, acc_y_x, T, sigma2 = causal_experiment(X, Y)
-#         print("X_Y:", acc_x_y, "Y_X:", acc_y_x)
-#         print("Tiempo total : ", time.time() - start)
-#         with open(gene_output_file, "a") as f:
-#             f.write(f"{roi_name},{gene_name},{acc_x_y},{acc_y_x},{sigma2}\n")
+# Test de ROI vs genes
+with open(gene_output_file, "w") as f:
+    f.write("ROI,GEN,X_Y,Y_X,sigma2\n")
+
+for roi in ROIs:
+    roi_name = roi[0]
+    roi_path = roi[1]
+    for gene in GENES:
+        start = time.time()
+        gene_name = gene[0]
+        gene_path = gene[1]
+        print("empieza", roi_name, gene_name)
+        X, Y = ROI_vs_gene_dataset(roi_path, gene_path)
+        acc_x_y, acc_y_x, T, sigma2 = causal_experiment(X, Y)
+        print("X_Y:", acc_x_y, "Y_X:", acc_y_x)
+        print("Tiempo total : ", time.time() - start)
+        with open(gene_output_file, "a") as f:
+            f.write(f"{roi_name},{gene_name},{acc_x_y},{acc_y_x},{sigma2}\n")

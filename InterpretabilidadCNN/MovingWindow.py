@@ -10,65 +10,18 @@ import util
 import multiprocessing as mp
 
 
-def sliding_window_batch(model, images, mean, std, muestra):
-    k_size = 3
-
-    # Obtenemos P0
-    images_tensor = tf.constant(images.reshape(images.shape[0], 91, 109, 91, 1))
-    p0 = model.predict(images_tensor)
-
-    # Creamos la matriz de relevancia
-    relevance_matrix = np.zeros(
-        (images.shape[0], images.shape[1] - 2, images.shape[2] - 2, images.shape[3] - 2, images.shape[4]), "float32")
-
-    # Para medir el progreso
-    total = np.count_nonzero(muestra)
-    count = 0
-
-    new_images = images.copy()
-    beforee = time.time()
-    tiempo_predict = 0.
-    tiempo_resto = 0.
-    for i in range(images.shape[1] - (k_size - 1)):
-        for j in range(images.shape[2] - (k_size - 1)):
-            for k in range(images.shape[3] - (k_size - 1)):
-                if muestra[i + 1, j + 1, k + 1] != 0:
-                    b = time.time()
-                    # Creamos el parche
-                    kernel = np.random.normal(mean, std, [images.shape[0], 3, 3, 3, 1])
-
-                    # Recuperamos las imágenes originales restaurando el parche anterior con los valores originales,
-                    # así no hay que copiarlas todas
-                    new_images[:, i - 1: (i - 1 + 4), j - 1: (j - 1 + 4), k - 1: (k - 1 + 4)] = images[:,
-                                                                                                i - 1: (i - 1 + 4),
-                                                                                                j - 1: (j - 1 + 4),
-                                                                                                k - 1: (k - 1 + 4)]
-                    # Aplicamos el parche nuevo
-                    new_images[:, i: (i + 3), j: (j + 3), k: (k + 3)] = kernel
-
-                    # Obtenemos P1
-                    b_predict = time.time()
-                    p1 = model.predict(tf.constant(new_images.reshape(images.shape[0], 91, 109, 91, 1)))
-                    a_predict = time.time()
-                    # Aplicamos la fórmula y ponemos el resultado en la matriz de relevancia
-                    relevance_matrix[:, i, j, k] = np.log((p0 / (1 - p0)) / (p1 / (1 - p1)))
-
-                    count += 1
-                    a = time.time()
-                    t_predict = a_predict - b_predict
-                    t_demas = (a - b) - t_predict
-                    tiempo_predict += t_predict
-                    tiempo_resto += t_demas
-                    if count % 100 == 0:
-                        print(str(count * 100 / total) + " % ", time.time() - beforee, " s", " Tiempo predict: ",
-                              tiempo_predict, " Tiempo resto: ", tiempo_resto)
-                        tiempo_resto = 0.
-                        tiempo_predict = 0.
-
-    return relevance_matrix
-
-
 def sliding_window_batch_stride(model, images, mean, std, muestra, stride):
+    """
+    Función para obtener la puntuación de relevancia de cada vóxel en la predicción del modelo
+
+    :param model: Modelo a evaluar
+    :param images: Dataset de imágenes
+    :param mean: Media del parche
+    :param std: Desviación del parche
+    :param muestra: Imagen de ejemplo que utilzaremos como referencia
+    :param stride: Stride para mover el parche
+    :return: Matriz de relevancia
+    """
     k_size = 3
 
     # Obtenemos P0
@@ -83,7 +36,6 @@ def sliding_window_batch_stride(model, images, mean, std, muestra, stride):
     total = np.count_nonzero(muestra) / (stride ** 3)
     count = 0
 
-    new_images = images.copy()
     beforee = time.time()
     tiempo_predict = 0.
     tiempo_resto = 0.
@@ -120,12 +72,7 @@ def sliding_window_batch_stride(model, images, mean, std, muestra, stride):
                                                                       images.shape[3], 1)))
                     a_predict = time.time()
                     d = np.log((p0 / (1 - p0)) / (p1 / (1 - p1)))
-                    # d[np.isnan(d)] = 0
 
-                    # print("______________", p0.shape[0])
-                    # for _ in range(p0.shape[0]):
-                    #     print("P0: ", p0[_], " P1: ", p1[_], " d: ", d[_], type(d), _)
-                    # Aplicamos la fórmula y ponemos el resultado en la matriz de relevancia
                     value_patch = np.ones((images.shape[0], stride, stride, stride, 1), dtype='float32') * \
                                   d.reshape(images.shape[0], 1, 1, 1, 1)
                     try:
@@ -160,7 +107,7 @@ if __name__ == '__main__':
 
     ALL_DATA = "E:Corrected_FA/ALL_DATA/"
     info_data = "idaSearch_8_01_2020.csv"
-    model_path = "model_loss_0.3_9999_0.1_0.003_2.h5"
+    model_path = "Mejor_modelo.h5"
 
     # Obtenemos los diccionarios con los nombres de los ficheros que contienen las imágenes
     AD_CN, groups = util.obtain_data_files(ALL_DATA, info_data)
@@ -196,7 +143,6 @@ if __name__ == '__main__':
     for etiqueta in etiquetas_grupos:
         arr = np.array(util.load_data(ALL_DATA, groups["AD " + etiqueta] + groups["CN " + etiqueta]), dtype='float32')
         arr = arr.reshape((arr.shape[0], 91, 109, 91, 1))
-        # arr = (arr - mean) / std  # Normalizamos
         print(etiqueta, "Shape: ", arr.shape, "AD: ", len(groups["AD " + etiqueta]), " CN: ",
               len(groups["CN " + etiqueta]))
         data_grupos[etiqueta] = arr
@@ -207,9 +153,6 @@ if __name__ == '__main__':
     for etiqueta in etiquetas_grupos:
         images = data_grupos[etiqueta]
         images_tensor = tf.constant(images.reshape(images.shape[0], 91, 109, 91, 1))
-        # images_labels = np.zeros((96, 1))
-        # images_labels[:46] = 1
-        # print(model.evaluate(x=images_tensor, y=images_labels))
         preds = model.predict(images_tensor)
         preds = preds > 0.5
         print(preds.sum())
